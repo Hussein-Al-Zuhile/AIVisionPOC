@@ -6,11 +6,14 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 data class AiUiState(
     val selectedModel: ModelVariant = ModelVariant.FAST,
@@ -21,6 +24,7 @@ data class AiUiState(
     val generationError: String = "",
     val modelAvailable: Boolean = false,
     val downloadState: DownloadState = DownloadState.Idle,
+    val generationId: Int = 0,
 )
 
 sealed class AiUiEvent {
@@ -102,16 +106,28 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
         if (image == null && _uiState.value.selectedImageUri != null) {
             // GenerateWithImage was called but bitmap wasn't decoded — just guard silently
         }
+        _uiState.update { it.copy(isGenerating = true, generationError = "", generationId = it.generationId + 1) }
         _response.value = ""
-        _uiState.update { it.copy(isGenerating = true, generationError = "") }
         generationJob = viewModelScope.launch {
             try {
                 aiHelper.model = state.selectedModel
                 aiHelper.initialize()
                 val flow = if (image != null) aiHelper.generate(state.prompt, image)
                            else aiHelper.generate(state.prompt)
-                flow.collect { chunk -> _response.value += chunk }
-                _response.value = _response.value.trim()
+                val buffer = StringBuilder()
+                val flushJob = launch {
+                    while (isActive) {
+                        delay(50.milliseconds)
+                        val text = buffer.toString()
+                        if (text.isNotEmpty()) _response.value = text
+                    }
+                }
+                try {
+                    flow.collect { chunk -> buffer.append(chunk) }
+                } finally {
+                    flushJob.cancel()
+                    _response.value = buffer.toString().trim().ifEmpty { "" }
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(generationError = e.message ?: "Unknown error") }
             } finally {

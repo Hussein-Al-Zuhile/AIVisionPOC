@@ -1,6 +1,7 @@
 package com.tatweer.aivisionpoc
 
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -35,8 +36,11 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.model.rememberStreamingMarkdownState
 import java.io.File
 
 @Composable
@@ -74,6 +79,11 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
         }
     }
 
+    val scrollState = rememberScrollState()
+    LaunchedEffect(response) {
+        if (state.isGenerating) scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
     Box(
         modifier = Modifier.fillMaxSize().imePadding(),
         contentAlignment = Alignment.TopCenter,
@@ -83,54 +93,18 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
                 .widthIn(max = 600.dp)
                 .fillMaxWidth()
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("AI Vision POC", style = MaterialTheme.typography.headlineSmall)
 
-            // Image preview
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (state.selectedImageUri != null) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(state.selectedImageUri)
-                            .memoryCacheKey("img_${state.imageVersion}")
-                            .build(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("No image selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
+            ImagePreview(imageUri = state.selectedImageUri, imageVersion = state.imageVersion)
 
-            // Image source buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Image, contentDescription = null)
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Gallery")
-                }
-                Button(onClick = { cameraLauncher.launch(cameraUri) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = null)
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Camera")
-                }
-            }
+            ImageSourceButtons(
+                onGalleryClick = { imagePicker.launch("image/*") },
+                onCameraClick = { cameraLauncher.launch(cameraUri) },
+            )
 
-            // Prompt
             OutlinedTextField(
                 value = state.prompt,
                 onValueChange = { vm.onEvent(AiUiEvent.PromptChanged(it)) },
@@ -141,92 +115,218 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            // Model selection
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                ModelVariant.entries.forEachIndexed { index, variant ->
-                    SegmentedButton(
-                        selected = state.selectedModel == variant,
-                        onClick = { vm.onEvent(AiUiEvent.ModelSelected(variant)) },
-                        shape = SegmentedButtonDefaults.itemShape(index, ModelVariant.entries.size),
-                        label = { Text(if (variant == ModelVariant.FAST) "Fast (E2B)" else "Thinking (E4B)") },
-                    )
-                }
-            }
+            ModelSelector(
+                selectedModel = state.selectedModel,
+                onModelSelected = { vm.onEvent(AiUiEvent.ModelSelected(it)) },
+            )
 
-            // Download banner
             if (!state.modelAvailable) {
-                val downloadingThis = state.downloadState is DownloadState.Downloading &&
-                    (state.downloadState as DownloadState.Downloading).variant == state.selectedModel
-
-                if (downloadingThis) {
-                    val progress = (state.downloadState as DownloadState.Downloading).progress
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (progress > 0f) {
-                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                            Text("${(progress * 100).toInt()}%  —  ${state.selectedModel.modelFile.substringAfterLast('/')}", style = MaterialTheme.typography.labelSmall)
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            Text("Connecting…", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Button(
-                            onClick = { vm.onEvent(AiUiEvent.CancelDownload) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Cancel") }
-                    }
-                } else {
-                    val failedThis = state.downloadState is DownloadState.Failed &&
-                        (state.downloadState as DownloadState.Failed).variant == state.selectedModel
-                    if (failedThis) {
-                        Text((state.downloadState as DownloadState.Failed).message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                    }
-                    Button(
-                        onClick = { vm.onEvent(AiUiEvent.DownloadModel) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Download model (${state.selectedModel.sizeGb} GB)") }
-                }
+                DownloadBanner(
+                    selectedModel = state.selectedModel,
+                    downloadState = state.downloadState,
+                    onDownload = { vm.onEvent(AiUiEvent.DownloadModel) },
+                    onCancel = { vm.onEvent(AiUiEvent.CancelDownload) },
+                )
             }
 
-            // Generate buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = { vm.onEvent(AiUiEvent.GenerateText) },
-                    enabled = !state.isGenerating && state.modelAvailable,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Text only") }
-
-                Button(
-                    onClick = { vm.onEvent(AiUiEvent.GenerateWithImage) },
-                    enabled = !state.isGenerating && state.modelAvailable,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    if (state.isGenerating) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    else Text("Generate")
-                }
-            }
-
-            if (state.isGenerating) {
-                Button(
-                    onClick = { vm.onEvent(AiUiEvent.StopGeneration) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("Stop") }
-            }
+            GenerateButtons(
+                isGenerating = state.isGenerating,
+                modelAvailable = state.modelAvailable,
+                onGenerateText = { vm.onEvent(AiUiEvent.GenerateText) },
+                onGenerateWithImage = { vm.onEvent(AiUiEvent.GenerateWithImage) },
+                onStop = { vm.onEvent(AiUiEvent.StopGeneration) },
+            )
 
             if (state.generationError.isNotBlank()) {
-                Text(state.generationError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(
+                    state.generationError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
 
-            if (response.isNotBlank()) {
-                Text("Response", style = MaterialTheme.typography.labelMedium)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(16.dp),
-                ) { Markdown(response) }
+            if (response.isNotBlank() || state.isGenerating) {
+                ResponseSection(
+                    response = response,
+                    generationId = state.generationId,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun ImagePreview(imageUri: Uri?, imageVersion: Int) {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (imageUri != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imageUri)
+                    .memoryCacheKey("img_$imageVersion")
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "No image selected",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageSourceButtons(onGalleryClick: () -> Unit, onCameraClick: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = onGalleryClick, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Default.Image, contentDescription = null)
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text("Gallery")
+        }
+        Button(onClick = onCameraClick, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = null)
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text("Camera")
+        }
+    }
+}
+
+@Composable
+private fun ModelSelector(selectedModel: ModelVariant, onModelSelected: (ModelVariant) -> Unit) {
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        ModelVariant.entries.forEachIndexed { index, variant ->
+            SegmentedButton(
+                selected = selectedModel == variant,
+                onClick = { onModelSelected(variant) },
+                shape = SegmentedButtonDefaults.itemShape(index, ModelVariant.entries.size),
+                label = { Text(if (variant == ModelVariant.FAST) "Fast (E2B)" else "Thinking (E4B)") },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadBanner(
+    selectedModel: ModelVariant,
+    downloadState: DownloadState,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    if (downloadState is DownloadState.Downloading && downloadState.variant == selectedModel) {
+        val progress = downloadState.progress
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (progress > 0f) {
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                Text(
+                    "${(progress * 100).toInt()}%  —  ${selectedModel.modelFile.substringAfterLast('/')}",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Connecting…", style = MaterialTheme.typography.labelSmall)
+            }
+            Button(
+                onClick = onCancel,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Cancel") }
+        }
+    } else {
+        if (downloadState is DownloadState.Failed && downloadState.variant == selectedModel) {
+            Text(
+                downloadState.message,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
+            Text("Download model (${selectedModel.sizeGb} GB)")
+        }
+    }
+}
+
+@Composable
+private fun GenerateButtons(
+    isGenerating: Boolean,
+    modelAvailable: Boolean,
+    onGenerateText: () -> Unit,
+    onGenerateWithImage: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = onGenerateText,
+            enabled = !isGenerating && modelAvailable,
+            modifier = Modifier.weight(1f),
+        ) { Text("Text only") }
+
+        Button(
+            onClick = onGenerateWithImage,
+            enabled = !isGenerating && modelAvailable,
+            modifier = Modifier.weight(1f),
+        ) {
+            if (isGenerating) CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+            else Text("Generate")
+        }
+    }
+
+    if (isGenerating) {
+        Button(
+            onClick = onStop,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+        ) { Text("Stop") }
+    }
+}
+
+@Composable
+private fun ResponseSection(response: String, generationId: Int) {
+    Text("Response", style = MaterialTheme.typography.labelMedium)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(16.dp),
+    ) {
+        key(generationId) {
+            val streamingState = rememberStreamingMarkdownState()
+            val lastLength = remember { mutableIntStateOf(0) }
+            LaunchedEffect(response) {
+                val prev = lastLength.intValue
+                if (response.length > prev) {
+                    streamingState.append(response.substring(prev))
+                    lastLength.intValue = response.length
+                }
+            }
+            Markdown(streamingState)
         }
     }
 }
