@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.tatweer.aivisionpoc"
-        minSdk = 26
+        minSdk = 35
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -53,6 +53,9 @@ dependencies {
     implementation(libs.litertlm)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.markdown.renderer.m3)
+
+    implementation(libs.koog.agents.core)
+    implementation(libs.koog.litert)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

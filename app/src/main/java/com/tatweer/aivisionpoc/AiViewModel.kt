@@ -25,6 +25,7 @@ data class AiUiState(
     val modelAvailable: Boolean = false,
     val downloadState: DownloadState = DownloadState.Idle,
     val generationId: Int = 0,
+    val isKoogMode: Boolean = false,
 )
 
 sealed class AiUiEvent {
@@ -36,11 +37,13 @@ sealed class AiUiEvent {
     data object StopGeneration : AiUiEvent()
     data object DownloadModel : AiUiEvent()
     data object CancelDownload : AiUiEvent()
+    data object ToggleKoogMode : AiUiEvent()
 }
 
 class AiViewModel(app: Application) : AndroidViewModel(app) {
 
     private val aiHelper = AiHelper(app)
+    private val koogHelper = KoogHelper(app)
     private var selectedBitmap: Bitmap? = null
     private var generationJob: Job? = null
 
@@ -70,11 +73,12 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
             is AiUiEvent.ModelSelected -> onModelSelected(event.variant)
             is AiUiEvent.PromptChanged -> _uiState.update { it.copy(prompt = event.text) }
             is AiUiEvent.ImagePicked -> onImagePicked(event.uri, event.bitmap)
-            is AiUiEvent.GenerateText -> generate(image = null)
+            is AiUiEvent.GenerateText -> if (_uiState.value.isKoogMode) generateWithKoog() else generate(image = null)
             is AiUiEvent.GenerateWithImage -> generate(image = selectedBitmap)
             is AiUiEvent.StopGeneration -> stopGeneration()
             is AiUiEvent.DownloadModel -> DownloadService.start(getApplication(), _uiState.value.selectedModel)
             is AiUiEvent.CancelDownload -> DownloadService.cancel(getApplication())
+            is AiUiEvent.ToggleKoogMode -> _uiState.update { it.copy(isKoogMode = !it.isKoogMode) }
         }
     }
 
@@ -136,6 +140,26 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun generateWithKoog() {
+        val state = _uiState.value
+        if (state.prompt.isBlank()) {
+            _uiState.update { it.copy(generationError = "Please enter a prompt.") }
+            return
+        }
+        _uiState.update { it.copy(isGenerating = true, generationError = "", generationId = it.generationId + 1) }
+        _response.value = ""
+        generationJob = viewModelScope.launch {
+            try {
+                val result = koogHelper.run(state.prompt, state.selectedModel)
+                _response.value = result
+            } catch (e: Exception) {
+                _uiState.update { it.copy(generationError = e.message ?: "Koog agent error") }
+            } finally {
+                _uiState.update { it.copy(isGenerating = false) }
+            }
+        }
+    }
+
     private fun stopGeneration() {
         generationJob?.cancel()
         generationJob = null
@@ -144,6 +168,7 @@ class AiViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         aiHelper.close()
+        koogHelper.close()
         super.onCleared()
     }
 }

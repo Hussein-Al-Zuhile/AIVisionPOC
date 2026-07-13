@@ -9,6 +9,8 @@ coilCompose = "3.5.0"
 litertlm = "0.13.1"
 lifecycle = "2.9.1"
 markdownRenderer = "0.43.0"
+koog = "1.0.0"
+koogLitert = "1.0.0-beta"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,6 +26,8 @@ coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = 
 litertlm = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
+koog-agents-core = { module = "ai.koog:agents-core", version.ref = "koog" }
+koog-litert = { module = "ai.koog:prompt-executor-litert-client", version.ref = "koogLitert" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -120,6 +121,11 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
                 onModelSelected = { vm.onEvent(AiUiEvent.ModelSelected(it)) },
             )
 
+            KoogModeRow(
+                isKoogMode = state.isKoogMode,
+                onToggle = { vm.onEvent(AiUiEvent.ToggleKoogMode) },
+            )
+
             if (!state.modelAvailable) {
                 DownloadBanner(
                     selectedModel = state.selectedModel,
@@ -132,6 +138,7 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
             GenerateButtons(
                 isGenerating = state.isGenerating,
                 modelAvailable = state.modelAvailable,
+                isKoogMode = state.isKoogMode,
                 onGenerateText = { vm.onEvent(AiUiEvent.GenerateText) },
                 onGenerateWithImage = { vm.onEvent(AiUiEvent.GenerateWithImage) },
                 onStop = { vm.onEvent(AiUiEvent.StopGeneration) },
@@ -151,6 +158,27 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
                     generationId = state.generationId,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun KoogModeRow(isKoogMode: Boolean, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = isKoogMode,
+            onClick = onToggle,
+            label = { Text(if (isKoogMode) "Koog Agent" else "Direct LiteRT") },
+        )
+        if (isKoogMode) {
+            Text(
+                "Running via Koog 1.0 · tool calling enabled",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
@@ -272,6 +300,7 @@ private fun DownloadBanner(
 private fun GenerateButtons(
     isGenerating: Boolean,
     modelAvailable: Boolean,
+    isKoogMode: Boolean,
     onGenerateText: () -> Unit,
     onGenerateWithImage: () -> Unit,
     onStop: () -> Unit,
@@ -281,19 +310,28 @@ private fun GenerateButtons(
             onClick = onGenerateText,
             enabled = !isGenerating && modelAvailable,
             modifier = Modifier.weight(1f),
-        ) { Text("Text only") }
-
-        Button(
-            onClick = onGenerateWithImage,
-            enabled = !isGenerating && modelAvailable,
-            modifier = Modifier.weight(1f),
         ) {
-            if (isGenerating) CircularProgressIndicator(
+            if (isGenerating && isKoogMode) CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
                 color = MaterialTheme.colorScheme.onPrimary,
             )
-            else Text("Generate")
+            else Text(if (isKoogMode) "Run Agent" else "Text only")
+        }
+
+        if (!isKoogMode) {
+            Button(
+                onClick = onGenerateWithImage,
+                enabled = !isGenerating && modelAvailable,
+                modifier = Modifier.weight(1f),
+            ) {
+                if (isGenerating) CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+                else Text("Generate")
+            }
         }
     }
 
