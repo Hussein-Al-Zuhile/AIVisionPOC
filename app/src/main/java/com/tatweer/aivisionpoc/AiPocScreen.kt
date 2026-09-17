@@ -1,7 +1,10 @@
 package com.tatweer.aivisionpoc
 
+import android.app.Activity
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -23,11 +26,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +85,13 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
         }
     }
 
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!text.isNullOrBlank()) vm.onEvent(AiUiEvent.PromptChanged(text))
+        }
+    }
+
     val scrollState = rememberScrollState()
     LaunchedEffect(response) {
         if (state.isGenerating) scrollState.animateScrollTo(scrollState.maxValue)
@@ -114,6 +126,17 @@ fun AiPocScreen(vm: AiViewModel = viewModel()) {
                 minLines = 2,
                 maxLines = 4,
                 modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    IconButton(onClick = {
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak your prompt…")
+                        }
+                        speechLauncher.launch(intent)
+                    }) {
+                        Icon(Icons.Default.Mic, contentDescription = "Speak prompt")
+                    }
+                },
             )
 
             ModelSelector(

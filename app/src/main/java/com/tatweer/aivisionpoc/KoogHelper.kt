@@ -57,8 +57,8 @@ class KoogHelper(context: Context) : AutoCloseable {
             ) { rawPrompt ->
                 Log.d("KoogSubgraph", "Stage 1 (distill) running")
                 "Restate the following as one clear, standalone question or request. " +
-                    "Call finalize_task_result with only that restated sentence, nothing else. " +
-                    "Input: \"$rawPrompt\""
+                        "Call finalize_task_result with only that restated sentence, nothing else. " +
+                        "Input: \"$rawPrompt\""
             }
 
             // Stage 2: answer the distilled question with device tools available
@@ -70,9 +70,9 @@ class KoogHelper(context: Context) : AutoCloseable {
             ) { distilledQuestion ->
                 Log.d("KoogSubgraph", "Stage 2 (answer) received: $distilledQuestion")
                 "Answer the following question concisely. " +
-                    "Use the getCurrentDateTime tool if the question involves time or date. " +
-                    "Call finalize_task_result with your answer when done. " +
-                    "Question: \"$distilledQuestion\""
+                        "Use the getCurrentDateTime tool if the question involves time or date. " +
+                        "Call finalize_task_result with your answer when done. " +
+                        "Question: \"$distilledQuestion\""
             }
 
             nodeStart then distill then answer then nodeFinish
@@ -82,9 +82,11 @@ class KoogHelper(context: Context) : AutoCloseable {
             promptExecutor = executor,
             llmModel = model,
             strategy = twoStageStrategy,
-            toolRegistry = ToolRegistry { tools(DeviceTools()) },
+            toolRegistry = ToolRegistry {
+                tools(DeviceTools())
+            },
             systemPrompt = "You are a helpful AI assistant running locally on this Android device.",
-            maxIterations = 10,
+            maxIterations = 100,
         )
 
         return agent.run(prompt)
